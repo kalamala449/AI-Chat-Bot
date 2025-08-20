@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Revolt Voice Live</title>
+</head>
+<body>
+  <h1>Revolt Motors – Voice Chat</h1>
+  <button id="recordBtn">🎤 Start Talking</button>
+  <p id="transcript"></p>
+  <p id="response"></p>
+
+  <script>
+    // --- Speech Recognition (input) -------------------------
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    // --- Speech Synthesis (output) --------------------------
+    const synth = window.speechSynthesis;
+
+    // --- Interrupt current TTS if user speaks ----------------
+    recognition.onstart = () => synth.cancel();
+
+    let isListening = false;
+    const recordBtn = document.getElementById("recordBtn");
+    const transcriptElement = document.getElementById("transcript");
+    const responseElement = document.getElementById("response");
+
+    recordBtn.onclick = function () {
+      if (!isListening) {
+        recognition.start();
+        recordBtn.innerText = "🛑 Stop";
+      } else {
+        recognition.stop();
+        recordBtn.innerText = "🎤 Start Talking";
+      }
+      isListening = !isListening;
+    };
+
+    recognition.onresult = async function (event) {
+      const userText = event.results[0][0].transcript;
+      transcriptElement.innerText = "You: " + userText;
+      await streamGemini(userText);
+    };
+
+    // ========== Gemini Live Streaming + TTS ====================
+    async function streamGemini(text) {
+      responseElement.innerText = "";
+      const res = await fetch("/api/live", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userMessage: text })
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      let fullResponse = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        const clean = chunk.replace(/^data: /, "");
+        fullResponse += clean;
+        responseElement.innerText = "Bot: " + fullResponse;
+      }
+
+      speakOutLoud(fullResponse);
+    }
+
+    // ------- Speak out the response  --------------------------
+    function speakOutLoud(text) {
+      synth.cancel(); // ensure nothing else is speaking
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "en-US";
+      synth.speak(utter);
+    }
+  </script>
+</body>
+</html>
